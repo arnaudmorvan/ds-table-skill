@@ -1,3 +1,9 @@
+---
+name: ds-table
+description: "Génère des data tables Figma via MCP. USE WHEN: l'utilisateur veut créer un tableau/table dans Figma, un data table avec colonnes typées (texte, badges, checkboxes, actions), une page type user-list/orders-list, ou tout écran CRUD avec tableau. Architecture column-first, native slots v3."
+argument-hint: "Description de la table souhaitée (ex: 'table Orders 8 lignes avec checkbox, customer, status, actions')"
+---
+
 # Skill — Figma Table Builder (v3 Native Slots)
 
 > Génère des tables de données complètes dans Figma via MCP, en utilisant une architecture **column-first** avec des composants natifs (th/td) et des **slots natifs Figma** (zero `detachInstance()`).
