@@ -132,10 +132,6 @@ ds-table/
       components/
         th.yaml                         ← Table Header Cell (variants, layout)
         td.yaml                         ← Table Data Cell (native slot pattern)
-      pages/
-        template-table.yaml             ← SaaS layout template (sidebar+table)
-        user-list.yaml                  ← Full page example with table
-      property-map.yaml                 ← Figma ↔ CSS ↔ React mapping
 ```
 
 ## How to Use

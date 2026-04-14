@@ -88,17 +88,12 @@ knowledge-base/
     components/
       th.yaml             ← Table Header Cell (variants, layout)
       td.yaml             ← Table Data Cell (variants, native slot, recipes)
-    pages/
-      template-table.yaml ← Layout template (sidebar + topbar + table area)
-      user-list.yaml      ← Example page consommant le table builder
-    property-map.yaml     ← Mapping Theme ↔ Figma ↔ CSS
 ```
 
 ### Lecture des specs
 
 1. **Toujours lire `builders/table.yaml`** en premier — contient l'architecture complète, les helpers réutilisables, et les pitfalls
 2. Lire `components/th.yaml` et `components/td.yaml` pour les détails de variantes et le pattern slot natif
-3. Lire les pages pour le contexte d'utilisation
 
 ## Règles critiques
 
