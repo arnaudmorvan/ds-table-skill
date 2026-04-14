@@ -1,0 +1,758 @@
+# CSpec — Table (column-first layout) — v3 NATIVE SLOTS
+# Complete table system using column-based auto layout with NATIVE COMPONENTS.
+# Pattern: Table=HORIZONTAL → Column=VERTICAL → th/td instances
+# v3: td Content=Slot utilise des SLOTS NATIFS Figma — ZERO detachInstance().
+# Les td restent des INSTANCES vivantes (connexion DS préservée).
+#
+# Reference: Figma node 146:6394 ("Exemple 1 tab")
+# Validated: Orders Table v3 — native slots, full MCP build
+#
+# -------------------------------------------------------------------
+# ITERATION LOG — bugs rencontrés et corrigés lors du build MCP
+# -------------------------------------------------------------------
+# v1 → v2: Passage de frames custom à composants natifs (th, td, badge, button)
+# v2 → v3 PIVOT: Le td utilise maintenant des SLOTS NATIFS Figma (type="SLOT").
+#   Plus besoin de detachInstance(). Les instances restent vivantes.
+#
+# 1. Colonnes effondrées (h=10px) → column.primaryAxisSizingMode = "AUTO"
+#    + column.layoutSizingVertical = "HUG" APRÈS appendChild au table
+# 2. Checkbox instances: UTILISABLES. Cacher tous les TEXT enfants AVANT
+#    injection dans le slot (inaccessibles après).
+# 3. primaryAxisAlignItems (avec "Axis") — pas primaryAlignItems
+# 4. MCP rollback partiel → séparer Call 1 (structure) et Call 2 (slots)
+# 5. table.counterAxisSizingMode = "AUTO" obligatoire
+# 6. NOMS INTERNES ≠ YAML specs:
+#    th: TEXT "Column"  |  td: TEXT "Value"  |  badge: TEXT "content"  |  button: TEXT "Button"
+# 7. SLOT NATIF: configurer les instances AVANT slot.appendChild()
+#    (enfants inaccessibles via findOne/children après injection dans le slot)
+# 8. Ghost button: texte BLANC par défaut → override fills AVANT injection
+# 9. Ghost SM = 69px fixe → colonne action ≥ 230px
+# 10. Placeholder "slot" dans le slot: supprimer slot.children[0].remove()
+#     avant d'injecter du contenu
+# 11. ZEBRA STRIPING: swapComponent() sur td Content=Slot DESTROY le slot content.
+#     ⚠️ NE PAS utiliser swapComponent pour changer Fill=Default↔Subtle sur les slot cells.
+#     Solution: créer les cells avec la bonne variante dès le départ (alternate Default/Subtle).
+# 12. SORT INDICATORS: th Sort=Asc/Desc activables via swapComponent() sur les th instances (safe, pas de slot).
+# 13. ICON BUTTONS: sans icon CS, créer des frames 28×28 avec createVector (pencil, X) et createEllipse (dots).
+#     Slot accepte des frames réguliers (pas besoin d'instances).
+# 14. SM DENSITY: Size=SM donne height ~32px (th) et ~36px (td). Même pattern column-first.
+
+meta:
+  name: Table
+  level: 2  # builder
+  intent: builder
+  architecture: column-first
+  approach: native-slots  # v3 — th/td instances + SLOT natif Figma (zero detach)
+  consumes:
+    components: [th, td, badge, button, checkbox, avatar]
+
+# ──────────────────────────────────────────────
+# Architecture overview
+# ──────────────────────────────────────────────
+#
+# Table (HORIZONTAL, gap=0)
+#   ├── Column "Checkbox"    (VERTICAL, width=60  FIXED)
+#   │   ├── th instance      (FILL width, Size=MD, Fill=Light)
+#   │   ├── td INSTANCE      (Content=Slot, checkbox injecté dans slot natif)
+#   │   └── ...
+#   ├── Column "Order"       (VERTICAL, width=170 FIXED)
+#   │   ├── th instance      (FILL width, override "Column" text)
+#   │   ├── td INSTANCE      (Content=Text, override "Value" text)
+#   │   └── ...
+#   ├── ... more columns ...
+#   └── Column "Actions"     (VERTICAL, width=230 FIXED)  # ≥220px pour 3 Ghost buttons
+#       ├── th instance
+#       ├── td INSTANCE      (Content=Slot, 3 Ghost buttons dans slot natif)
+#       └── ...
+
+# ──────────────────────────────────────────────
+# Auto Layout rules (the subtle part)
+# ──────────────────────────────────────────────
+auto-layout-rules:
+  table:
+    direction: HORIZONTAL
+    sizing:
+      width: HUG   # sum of column widths
+      height: HUG  # tallest column (= header + N × cell height)
+    padding: 0
+    gap: 0
+    fills:
+      - type: SOLID
+        color: $Neutral/colorBgElevated
+    cornerRadius: 8
+    clipsContent: true
+    effects:
+      - type: DROP_SHADOW
+        color: { r: 0, g: 0, b: 0, a: 0.08 }
+        offset: { x: 0, y: 2 }
+        radius: 8
+        blendMode: NORMAL  # CRITICAL — sans blendMode l'ombre est ignorée
+
+  column:
+    direction: VERTICAL
+    sizing:
+      width: FIXED   # chaque colonne a sa propre largeur fixe
+      height: HUG    # IMPORTANT: primaryAxisSizingMode="AUTO" + layoutSizingVertical="HUG"
+    padding: 0
+    gap: 0
+    fills: []  # transparent
+    clipsContent: false
+
+  header-cell:
+    type: th-instance  # CS 150:1915
+    variants:
+      Size: MD          # hauteur ~40px
+      Fill: Light       # ou Dark/White
+      Sort: None        # ou Asc/Desc
+      Icon: "False"
+    alignment: MIN  # primaryAxisAlignItems=MIN (aligné à gauche comme td)
+    # NOTE: le composant th original utilisait SPACE_BETWEEN (centré visuellement)
+    # Modifié en MIN pour aligner les headers avec les data cells
+    override:
+      text-node-name: "Column"  # REAL name (pas "title" du YAML spec)
+    sizing:
+      width: FILL    # layoutSizingHorizontal="FILL" APRÈS appendChild
+    strokes:
+      bottom: { inherité du composant }
+
+  data-cell:
+    type: td-instance  # CS 153:1859
+    variants:
+      simple-text:
+        Size: MD
+        Fill: Default    # ou Subtle pour lignes sélectionnées
+        Content: Text
+        Weight: Regular  # ou Bold
+      slot:
+        Size: MD
+        Fill: Default    # ou Subtle
+        Content: Slot    # SLOT NATIF Figma — pas de detach
+        Weight: Regular
+    override:
+      text-node-name: "Value"  # REAL name (pas "label" du YAML spec)
+      slot-access: |
+        # Trouver le slot natif:
+        var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+        # Supprimer le placeholder texte:
+        if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+        # Injecter du contenu (configurer AVANT appendChild):
+        slot.appendChild(childInstance);
+        # tdInst.type === "INSTANCE" ✅ (pas de detach!)
+    sizing:
+      width: FILL    # layoutSizingHorizontal="FILL" APRÈS appendChild
+      height: FIXED  # 48px — hauteur uniforme pour toutes les data cells
+    fixed-height: 48  # 8(pad) + 32(contenu max: Ghost SM / avatar) + 8(pad)
+    clipsContent: true  # IMPORTANT pour éviter overflow
+
+# ──────────────────────────────────────────────
+# Row selection & alternating
+# ──────────────────────────────────────────────
+row-styles:
+  default:
+    fills: []  # transparent
+  selected:
+    fills:
+      - type: SOLID
+        color: $Neutral/colorBgSubtle
+    # Appliqué sur CHAQUE cellule de la ligne (pas de row container)
+  alternating:
+    even: transparent
+    odd: $Neutral/colorBgSubtle
+    # OU: selected rows prennent $Neutral/colorBgSubtle indépendamment
+
+# ──────────────────────────────────────────────
+# Column types (enrichi après build réel)
+# ──────────────────────────────────────────────
+column-types:
+  - name: checkbox
+    description: "Selection column with native checkbox instances in td native Slot"
+    width: 60
+    header: th instance (Size=MD, Fill=Light, Sort=None, Icon=False)
+    cell: td Content=Slot → slot natif → checkbox instance (SANS detach)
+    notes: |
+      UTILISER les instances du checkbox CS (53:1244).
+      Variant: checked=true/false, size=SM, state=Default
+      AVANT injection dans le slot, CACHER tous les TEXT enfants:
+        cbInst.findAll(function(n){ return n.type === "TEXT"; })
+              .forEach(function(n){ n.visible = false; });
+      Puis: slot.appendChild(cbInst)
+      Le td RESTE UNE INSTANCE.
+
+  - name: data-text
+    description: "Simple text column (order number, amount, payment)"
+    width: 160-170
+    header: th instance (override "Column" text)
+    cell: td Content=Text (override "Value" text)
+    variants:
+      bold: td Weight=Bold (pour ex: numéro commande)
+      regular: td Weight=Regular
+
+  - name: data-avatar-text
+    description: "Avatar + text name column"
+    width: 230
+    header: th instance (override "Column" text)
+    cell: td Content=Slot → slot natif → avatar instance (24×24) + text name (SANS detach)
+    cell-gap: 12
+    notes: |
+      Avatar: instance de avatar-profile-photo CS (147:1747)
+      variant Placeholder=True, Text=False, Size=md
+      resize(24,24) APRÈS createInstance() — 24px rentre dans 48px fixe (8+24+8=40 < 48)
+      Slot: vider le slot frame, ajouter avatar + createText avec nom
+
+  - name: data-badge
+    description: "Status column with colored badges"
+    width: 160
+    header: th instance (override "Column" text)
+    cell: td Content=Slot → slot natif → badge instance (SANS detach)
+    badge-mapping:
+      Pending: "variant=warning, size=sm"
+      Completed: "variant=success, size=sm"
+      Refunded: "variant=danger, size=sm"
+    notes: |
+      Badge CS (56:34) — instancier la bonne variant
+      Changer le texte via "content" (REAL node name):
+        bi.findOne(function(n){ return n.type==="TEXT" && n.name==="content"; }).characters = "Pending"
+
+  - name: actions
+    description: "Action buttons column using Secondary button instances"
+    width: 230  # MINIMUM 220px pour 3 Secondary SM buttons (69px chacun + gaps)
+    header: th instance (override "Column" text → "Action")
+    cell: td Content=Slot → slot natif → 3 Secondary button instances (SANS detach)
+    cell-gap: 8
+    notes: |
+      Button CS (44:302) — variant type=Secondary, size=SM, state=Default
+      Secondary SM = 69×32px fixe. 3 boutons + gaps ≈ 215px minimum.
+      PROBLÈME: texte Secondary est BLANC par défaut → invisible sur fond blanc.
+      FIX obligatoire: override fills du TEXT "Button":
+        btnTxt.fills = [{ type: "SOLID", color: { r: 0.067, g: 0.094, b: 0.153 } }];
+      Override texte AVANT injection: btn.findOne(n.type==="TEXT" && n.name==="Button").characters = "Edit"
+
+  - name: icon-actions
+    description: "Action icons (edit, delete, more) — vector-based, no button CS dependency"
+    width: 120  # 3×28 + 2×6 + ~padding = ~120px
+    header: th instance (override "Column" text → "Action")
+    cell: td Content=Slot → slot natif → 3 icon-btn frames (28×28)
+    cell-gap: 6
+    notes: |
+      Chaque icon-btn est un frame 28×28, cornerRadius=6, stroke 1px borderSubtle, fills=[].
+      Icons créés via createVector (pencil, X) ou createEllipse (3 dots).
+      Pas besoin du button CS — frames natifs dans le slot.
+      Pencil: vectorPaths "M 10 2 L 12 4 L 4 12 L 2 12 L 2 10 Z" (stroked, no fill)
+      X: vectorPaths "M 1 1 L 11 11 M 11 1 L 1 11" (stroked, no fill)
+      More: 3 createEllipse 3×3, gap 7px, fills iconColor
+
+# ──────────────────────────────────────────────
+# Cell components mapping (from existing CS)
+# ──────────────────────────────────────────────
+cell-components:
+  th:
+    component-set: th   # node 150:1915
+    status: UTILISÉ
+    variants-used: "Size=MD, Fill=Light, Sort=None, Icon=False"
+    text-override: |
+      Node name = "Column" (PAS "title" indiqué dans th.yaml)
+      thInst.findOne(function(n){ return n.type==="TEXT" && n.name==="Column"; }).characters = "Header"
+
+  td:
+    component-set: td   # node 153:1859
+    status: UTILISÉ
+    simple-text:
+      variants: "Size=MD, Fill=Default, Content=Text, Weight=Regular"
+      text-override: |
+        Node name = "Value" (PAS "label" indiqué dans td.yaml)
+        tdInst.findOne(function(n){ return n.type==="TEXT" && n.name==="Value"; }).characters = "Data"
+    slot-content:
+      variants: "Size=MD, Fill=Default, Content=Slot, Weight=Regular"
+      native-slot-pattern: |
+        # v3: SLOT NATIF — pas de detachInstance() !
+        # Le td reste une INSTANCE vivante.
+        # 1. Trouver le slot natif:
+        var slot = tdInst.findOne(function(n){ return n.type === "SLOT"; });
+        # 2. Supprimer le placeholder:
+        if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+        # 3. Configurer l'enfant AVANT injection (inaccessible après):
+        childInst.findOne(...).characters = "override";
+        # 4. Injecter:
+        slot.appendChild(childInst);
+        # tdInst.type === "INSTANCE" ✅
+      critical-restriction: |
+        APRÈS injection dans le slot, les enfants de l'instance injectée
+        NE SONT PLUS ACCESSIBLES via findOne/findAll/children.
+        → Toujours configurer (texte, couleurs, visibilité) AVANT appendChild.
+
+  badge:
+    component-set: badge  # node 56:34
+    used-in: status column cells (dans td native Slot)
+    text-override: |
+      AVANT injection dans le slot:
+      Node name = "content" (PAS la première TEXT node)
+      bi.findOne(function(n){ return n.type==="TEXT" && n.name==="content"; }).characters = "Status"
+      PUIS: slot.appendChild(bi)
+
+  button:
+    component-set: button  # node 44:302
+    used-in: action column cells (dans td native Slot)
+    variant: "type=Secondary, size=SM, state=Default"
+    text-override: |
+      AVANT injection dans le slot:
+      Node name = "Button"
+      btn.findOne(function(n){ return n.type==="TEXT" && n.name==="Button"; }).characters = "Edit"
+    secondary-text-fix: |
+      # AVANT injection: Secondary button texte BLANC par défaut
+      var btnTxt = btn.findOne(function(n){ return n.type==="TEXT" && n.name==="Button"; });
+      btnTxt.fills = [{ type: "SOLID", color: { r: 0.067, g: 0.094, b: 0.153 } }];
+      # PUIS: slot.appendChild(btn)
+
+  avatar-profile-photo:
+    component-set: avatar-profile-photo  # node 147:1747
+    used-in: customer name column cells (dans td Slot)
+    variant: "Placeholder=True, Text=False, Size=md"
+    resize: "ai.resize(24, 24) APRÈS createInstance()  # 24px rentre dans 48px fixe (8+24+8=40)"
+
+  checkbox:
+    component-set: checkbox  # node 53:1244
+    status: UTILISÉ
+    used-in: checkbox column cells (dans td native Slot)
+    variant: "checked=true/false, size=SM, state=Default"
+    hide-labels: |
+      # AVANT injection dans le slot:
+      cbInst.findAll(function(n){ return n.type === "TEXT"; })
+            .forEach(function(n){ n.visible = false; });
+      # PUIS: slot.appendChild(cbInst)
+      # Le box 20×20 reste visible, td reste INSTANCE
+
+# ──────────────────────────────────────────────
+# Build recipe — MCP code complet et testé
+# ──────────────────────────────────────────────
+build-recipe:
+  strategy: |
+    Diviser en 2 appels MCP maximum:
+      Call 1: Structure complète (table + colonnes + th headers + td Content=Text colonnes simples)
+      Call 2: Colonnes complexes (checkbox, avatar+nom, badges, action buttons via td native Slot)
+    ZERO detachInstance() — toutes les td restent des INSTANCES.
+    RULE CRITIQUE: configurer les enfants AVANT slot.appendChild() (inaccessibles après).
+    Toujours vérifier avec screenshot entre les calls.
+
+  critical-patterns:
+    variable-helpers: |
+      # Helpers réutilisables — COPIER AU DEBUT DE CHAQUE CALL
+      var allV = await figma.variables.getLocalVariablesAsync("COLOR");
+      var colls = await figma.variables.getLocalVariableCollectionsAsync();
+      function gv(n) { return allV.find(function(v) { return v.name === n; }); }
+      function rv(o) {
+        if (!o) return { r: 0.9, g: 0.9, b: 0.9 };
+        var c = colls.find(function(x) { return x.id === o.variableCollectionId; });
+        if (!c) return { r: 0.9, g: 0.9, b: 0.9 };
+        var m = c.modes[0].modeId, val = o.valuesByMode[m];
+        if (val && val.r !== undefined) return val;
+        if (val && val.type === "VARIABLE_ALIAS") {
+          var t = allV.find(function(v) { return v.id === val.id; });
+          if (t) return rv(t);
+        }
+        return { r: 0.9, g: 0.9, b: 0.9 };
+      }
+      function bf(node, v) {
+        if (!v || !node.fills || !node.fills.length) return;
+        var f = JSON.parse(JSON.stringify(node.fills));
+        f[0] = figma.variables.setBoundVariableForPaint(f[0], "color", v);
+        node.fills = f;
+      }
+
+    component-set-helpers: |
+      # Charger les CS une seule fois en début de call
+      var thCS = await figma.getNodeByIdAsync("150:1915");
+      var tdCS = await figma.getNodeByIdAsync("153:1859");
+
+      # Helper pour trouver une variant dans un CS par son nom complet
+      function findV(cs, variantName) {
+        return cs.children.find(function(c) { return c.name === variantName; });
+      }
+
+      # Variants th/td les plus utilisées:
+      var thLight  = findV(thCS, "Size=MD, Fill=Light, Sort=None, Icon=False");
+      var tdText   = findV(tdCS, "Size=MD, Fill=Default, Content=Text, Weight=Regular");
+      var tdBold   = findV(tdCS, "Size=MD, Fill=Default, Content=Text, Weight=Bold");
+      var tdSlot   = findV(tdCS, "Size=MD, Fill=Default, Content=Slot, Weight=Regular");
+      var tdSubtle = findV(tdCS, "Size=MD, Fill=Subtle, Content=Text, Weight=Regular");
+      var tdSubSlot= findV(tdCS, "Size=MD, Fill=Subtle, Content=Slot, Weight=Regular");
+
+    slot-cell-factory: |
+      # Fonction pour préparer un td Slot natif et retourner le slot
+      # Le td RESTE UNE INSTANCE (zero detach!)
+      # Retourne { inst: InstanceNode, slot: SlotNode }
+      function mkSlotCell(colFrame, isSubtle) {
+        var comp = isSubtle ? tdSubSlot : tdSlot;
+        var inst = comp.createInstance();
+        colFrame.appendChild(inst);
+        inst.layoutSizingHorizontal = "FILL";
+        # Hauteur fixe 48px — uniforme pour toutes les data cells
+        inst.resize(inst.width, 48);
+        inst.primaryAxisSizingMode = "FIXED";
+        # Trouver le slot natif (type === "SLOT")
+        var slot = inst.findOne(function(n) { return n.type === "SLOT"; });
+        # Supprimer le placeholder texte "slot"
+        if (slot.children[0] && slot.children[0].type === "TEXT") {
+          slot.children[0].remove();
+        }
+        return { inst: inst, slot: slot };
+        # inst.type === "INSTANCE" ✅
+      }
+
+  steps:
+    - step: 1
+      action: "Préparer fonts + variables + Component Sets"
+      code: |
+        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        await figma.loadFontAsync({ family: "Inter", style: "Medium" });
+        await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+        await figma.loadFontAsync({ family: "Inter", style: "Bold" });
+        var vBgElev = gv("Neutral/colorBgElevated");
+        var vBgSub  = gv("Neutral/colorBgSubtle");
+        # + charger thCS, tdCS, findV, variants (voir component-set-helpers)
+
+    - step: 2
+      action: "Créer le frame table"
+      code: |
+        var table = figma.createFrame();
+        table.name = "Orders Table";
+        table.layoutMode = "HORIZONTAL";
+        table.primaryAxisSizingMode = "AUTO";
+        table.counterAxisSizingMode = "AUTO";  # CRUCIAL — sinon colonnes effondrées
+        table.itemSpacing = 0;
+        table.cornerRadius = 8;
+        table.clipsContent = true;
+        table.fills = [{ type: "SOLID", color: rv(vBgElev) }];
+        bf(table, vBgElev);
+        table.effects = [{
+          type: "DROP_SHADOW", visible: true,
+          color: { r: 0, g: 0, b: 0, a: 0.08 },
+          offset: { x: 0, y: 2 }, radius: 8, spread: 0,
+          blendMode: "NORMAL"  # OBLIGATOIRE
+        }];
+
+    - step: 3
+      action: "Créer les colonnes (VERTICAL, FIXED width)"
+      code: |
+        var colWidths = { checkbox: 60, order: 170, customer: 230,
+                          date: 160, status: 160, amount: 170,
+                          payment: 170, action: 230 };  # action=230 (pas 140!)
+        # Pour chaque clé dans colWidths:
+        var col = figma.createFrame();
+        col.name = "col-" + key;
+        col.layoutMode = "VERTICAL";
+        col.primaryAxisSizingMode = "AUTO";
+        col.counterAxisSizingMode = "FIXED";
+        col.resize(colWidths[key], 10);
+        col.itemSpacing = 0;
+        col.fills = [];
+        col.clipsContent = false;
+        table.appendChild(col);
+      post-append: |
+        for (var i = 0; i < table.children.length; i++) {
+          table.children[i].layoutSizingVertical = "HUG";
+        }
+
+    - step: 4
+      action: "Header row — instances th par colonne"
+      code: |
+        # Pour chaque colonne:
+        var thInst = thLight.createInstance();
+        col.appendChild(thInst);
+        thInst.layoutSizingHorizontal = "FILL";
+        # Override du texte:
+        var thTxt = thInst.findOne(function(n) {
+          return n.type === "TEXT" && n.name === "Column";
+        });
+        thTxt.characters = "Order";  # ou "Customer", "Date", etc.
+
+    - step: 5
+      action: "Data cells — colonnes texte simples (Call 1)"
+      notes: |
+        Pour chaque row dans les colonnes texte (order, date, amount, payment):
+          var isSelected = selectedRows.includes(rowIndex);
+          var comp = isSelected
+            ? (isBold ? findV(tdCS,"Size=MD, Fill=Subtle, Content=Text, Weight=Bold") : tdSubtle)
+            : (isBold ? tdBold : tdText);
+          var tdInst = comp.createInstance();
+          col.appendChild(tdInst);
+          tdInst.layoutSizingHorizontal = "FILL";
+          # Override texte:
+          var valTxt = tdInst.findOne(function(n) {
+            return n.type === "TEXT" && n.name === "Value";
+          });
+          valTxt.characters = rowData.value;
+          # Hauteur fixe 48px:
+          tdInst.resize(tdInst.width, 48);
+          tdInst.primaryAxisSizingMode = "FIXED";
+
+    - step: 6
+      action: "Data cells — checkbox column (Call 2) — NATIVE SLOT"
+      notes: |
+        var cbCS = await figma.getNodeByIdAsync("53:1244");
+        var cbUnchecked = findV(cbCS, "checked=false, size=SM, state=Default");
+        var cbChecked   = findV(cbCS, "checked=true, size=SM, state=Default");
+
+        Pour chaque row:
+          var r = mkSlotCell(colCheckbox, isSelected);
+          var cbComp = isSelected ? cbChecked : cbUnchecked;
+          var cbInst = cbComp.createInstance();
+          # AVANT injection: cacher les labels
+          cbInst.findAll(function(n) { return n.type === "TEXT"; })
+                .forEach(function(n) { n.visible = false; });
+          # Injecter dans le slot natif:
+          r.slot.appendChild(cbInst);
+          # r.inst.type === "INSTANCE" ✅
+
+    - step: 7
+      action: "Data cells — customer (avatar + nom) (Call 2) — NATIVE SLOT"
+      notes: |
+        var avatarCS = await figma.getNodeByIdAsync("147:1747");
+        var avatarComp = findV(avatarCS, "Placeholder=True, Text=False, Size=md");
+
+        Pour chaque row:
+          var r = mkSlotCell(colCustomer, isSelected);
+          r.slot.layoutMode = "HORIZONTAL";
+          r.slot.itemSpacing = 12;
+          r.slot.counterAxisAlignItems = "CENTER";
+          # Avatar (configurer AVANT injection):
+          var ai = avatarComp.createInstance();
+          ai.resize(24, 24);  # 24px rentre dans 48px fixe (8+24+8=40)
+          r.slot.appendChild(ai);
+          # Nom (createText = accessible normalement):
+          var nameTxt = figma.createText();
+          nameTxt.fontName = { family: "Inter", style: "Regular" };
+          nameTxt.fontSize = 14;
+          nameTxt.characters = rowData.name;
+          nameTxt.textAutoResize = "WIDTH_AND_HEIGHT";
+          r.slot.appendChild(nameTxt);
+
+    - step: 8
+      action: "Data cells — status badges (Call 2) — NATIVE SLOT"
+      notes: |
+        var badgeCS = await figma.getNodeByIdAsync("56:34");
+        var badges = {
+          Pending:   findV(badgeCS, "variant=warning, size=sm"),
+          Completed: findV(badgeCS, "variant=success, size=sm"),
+          Refunded:  findV(badgeCS, "variant=danger, size=sm")
+        };
+
+        Pour chaque row:
+          var r = mkSlotCell(colStatus, isSelected);
+          var bi = badges[rowData.status].createInstance();
+          # AVANT injection: override texte
+          var ct = bi.findOne(function(n) {
+            return n.type === "TEXT" && n.name === "content";
+          });
+          ct.characters = rowData.status;
+          # Injecter:
+          r.slot.appendChild(bi);
+
+    - step: 9
+      action: "Data cells — action Secondary buttons (Call 2) — NATIVE SLOT"
+      notes: |
+        var btnCS = await figma.getNodeByIdAsync("44:302");
+        var secSM = findV(btnCS, "type=Secondary, size=SM, state=Default");
+
+        Pour chaque row:
+          var r = mkSlotCell(colAction, isSelected);
+          r.slot.layoutMode = "HORIZONTAL";
+          r.slot.itemSpacing = 8;
+          r.slot.counterAxisAlignItems = "CENTER";
+          var labels = ["Edit", "Del", "..."];
+          for (var b = 0; b < labels.length; b++) {
+            var btnInst = secSM.createInstance();
+            # AVANT injection: override texte + fix couleur
+            var btnTxt = btnInst.findOne(function(n) {
+              return n.type === "TEXT" && n.name === "Button";
+            });
+            btnTxt.characters = labels[b];
+            btnTxt.fills = [{ type: "SOLID", color: { r: 0.067, g: 0.094, b: 0.153 } }];
+            # Injecter:
+            r.slot.appendChild(btnInst);
+          }
+
+    - step: 10
+      action: "Finalisation — vérifier sizing colonnes"
+      code: |
+        table.counterAxisSizingMode = "AUTO";
+        for (var i = 0; i < table.children.length; i++) {
+          table.children[i].primaryAxisSizingMode = "AUTO";
+          table.children[i].layoutSizingVertical = "HUG";
+        }
+
+  pitfalls:
+    - id: P1
+      issue: "Noms internes des composants ≠ specs YAML"
+      cause: "Les YAML specs documentent des noms logiques ('title', 'label') mais les vraies TEXT nodes dans Figma ont des noms différents"
+      fix: |
+        th: TEXT "Column" (pas "title")
+        td: TEXT "Value" (pas "label")
+        badge: TEXT "content"
+        button: TEXT "Button"
+        Toujours débugger avec findAll(TEXT) pour vérifier les vrais noms.
+
+    - id: P2
+      issue: "Child inaccessible APRÈS injection dans slot natif"
+      cause: "Après slot.appendChild(childInstance), les noeuds internes de childInstance ne sont PLUS accessibles via findOne/findAll/children. getNodeByIdAsync retourne null."
+      fix: |
+        CONFIGURER AVANT INJECTION:
+          var bi = badgeComp.createInstance();
+          bi.findOne(TEXT, "content").characters = "Pending";  # AVANT
+          slot.appendChild(bi);  # injection en dernier
+        Ceci s'applique à badge, checkbox, button — tout instance injecté dans un slot natif.
+
+    - id: P3
+      issue: "Secondary button texte invisible"
+      cause: "Le texte du Secondary button est BLANC par défaut (rgb 255,255,255)"
+      fix: "Override btnTxt.fills = [{ type: 'SOLID', color: { r: 0.067, g: 0.094, b: 0.153 } }]"
+
+    - id: P4
+      issue: "3 Secondary buttons débordent de la colonne action"
+      cause: "Secondary SM = 69px fixe. 3 × 69 + gaps = ~215px. Colonne de 140px trop étroite."
+      fix: "Colonne action = 230px minimum"
+
+    - id: P5
+      issue: "Placeholder 'slot' texte visible dans le slot natif"
+      cause: "Le slot natif contient un TEXT enfant 'slot' comme placeholder par défaut"
+      fix: |
+        Supprimer le placeholder AVANT d'injecter le contenu:
+          if (slot.children.length > 0 && slot.children[0].type === "TEXT") {
+            slot.children[0].remove();
+          }
+
+    - id: P6
+      issue: "Colonnes effondrées à h=10px"
+      cause: "counterAxisSizingMode du table pas en AUTO, ou column.layoutSizingVertical pas en HUG"
+      fix: "table.counterAxisSizingMode = 'AUTO' + col.layoutSizingVertical = 'HUG' APRÈS appendChild"
+
+    - id: P7
+      issue: "Checkbox label/description déborde dans la cellule"
+      cause: "Le CS checkbox inclut des text nodes visibles par défaut"
+      fix: "cbInst.findAll(TEXT).forEach(visible=false) — cacher tous les TEXT, le box reste visible"
+
+    - id: P8
+      issue: "Crash MCP rollback partiel — certaines colonnes vides"
+      cause: "Erreur dans une boucle → tout le call est rollback"
+      fix: "Séparer colonnes simples (Call 1) et complexes (Call 2). Vérifier children.length avant Call 2."
+
+    - id: P9
+      issue: "Décalage vertical entre colonnes (cellules de hauteurs différentes)"
+      cause: "Architecture column-based → chaque colonne a sa propre hauteur. Ghost SM (32px) et avatar font grossir certaines cellules."
+      fix: |
+        Hauteur fixe 48px sur TOUTES les data cells:
+          tdInst.resize(tdInst.width, 48);
+          tdInst.primaryAxisSizingMode = "FIXED";
+        48px = 8(pad) + 32(contenu max: Ghost SM / avatar) + 8(pad).
+        Avatar: resize(24,24) au lieu de 32×32 (rentre dans 48px avec marge).
+        Appliqué dans mkSlotCell ET dans le step 5 (colonnes texte).
+
+    - id: P10
+      issue: "swapComponent() DÉTRUIT le contenu des native slots"
+      cause: "Changer la variante d'un td Content=Slot via swapComponent() (ex: Fill=Default→Subtle) RESET le slot — tout le contenu injecté est perdu et remplacé par le placeholder 'slot'."
+      fix: |
+        ⛔ NE JAMAIS utiliser swapComponent pour changer le Fill d'un td avec Content=Slot.
+        ✅ Alternative 1: Créer les td avec la bonne variante DÈS LE DÉPART (zebra: alterner Default/Subtle lors de la construction).
+        ✅ Alternative 2: Override fills directement sur l'instance (td.fills = [...]) sans changer de variante.
+        NOTE: swapComponent EST safe sur les td Content=Text (text overrides préservés).
+        NOTE: swapComponent EST safe sur les th (pas de slots natifs).
+
+    - id: P11
+      issue: "Zebra striping nécessite planification au build-time"
+      cause: "Le zebra ne peut pas être appliqué rétroactivement sur les slot cells sans détruire le contenu (voir P10)."
+      fix: |
+        MEILLEURE APPROCHE: Alterner les variantes Default/Subtle lors de la construction initiale.
+        Dans le build recipe: isZebra = (r % 2 === 0);
+        Utiliser directement tdSubSlot/tdSlot selon isZebra dans mkSlotCell.
+        Les colonnes texte peuvent être swappées après coup (safe).
+
+# ──────────────────────────────────────────────
+# Exemples validés
+# ──────────────────────────────────────────────
+examples:
+  - name: "Orders Table (v2 component-based — OBSOLÈTE)"
+    node: "161:524"
+    page: Examples
+    status: REPLACED
+    approach: detach-based  # th/td instances + detachInstance — remplacé par v3 native slots
+    notes: "Ancienne version v2 utilisant detachInstance() pour injecter dans les td. Remplacée par v3 native slots."
+    columns:
+      - { key: checkbox, width: 60, type: checkbox, method: "td Slot → detach → checkbox instance (labels hidden)" }
+      - { key: order, width: 170, type: data-text, style: Bold, method: "td Content=Text, Weight=Bold" }
+      - { key: customer, width: 230, type: data-avatar-text, method: "td Slot → detach → avatar(32×32) + text" }
+      - { key: date, width: 160, type: data-text, style: Regular, method: "td Content=Text" }
+      - { key: status, width: 160, type: data-badge, method: "td Slot → detach → badge instance" }
+      - { key: amount, width: 170, type: data-text, style: Regular, method: "td Content=Text" }
+      - { key: payment, width: 170, type: data-text, style: Regular, method: "td Content=Text" }
+      - { key: action, width: 230, type: actions, method: "td Slot → detach → 3 Ghost button instances (text color fixed)" }
+    rows: 8
+    selected-rows: [2, 5]
+
+  - name: "Orders Table v3 (native slots + zebra + sort + icons)"
+    node: "196:824"
+    page: Examples
+    approach: native-slots
+    features:
+      zebra: true  # rows alternées Default/Subtle (indices pairs=Subtle)
+      sort-indicators:
+        - { column: order, direction: Asc }
+        - { column: date, direction: Desc }
+      row-separators: true  # strokeBottomWeight=1, Neutral/colorBorderSubtle
+      icon-buttons: true   # edit(pencil vector), delete(X vector), more(3 dots)
+    columns:
+      - { key: checkbox, width: 60, type: checkbox, method: "td Slot natif → checkbox (labels hidden AVANT injection)" }
+      - { key: order, width: 170, type: data-text, style: Bold, method: "td Content=Text, Weight=Bold" }
+      - { key: customer, width: 230, type: data-avatar-text, method: "td Slot natif → avatar(24×24) + text" }
+      - { key: date, width: 160, type: data-text, style: Regular, method: "td Content=Text" }
+      - { key: status, width: 160, type: data-badge, method: "td Slot natif → badge (texte overridé AVANT injection)" }
+      - { key: amount, width: 170, type: data-text, style: Regular, method: "td Content=Text" }
+      - { key: payment, width: 170, type: data-text, style: Regular, method: "td Content=Text" }
+      - { key: action, width: 120, type: icon-actions, method: "td Slot natif → 3 icon-btn frames (28×28, vector icons)" }
+    rows: 8
+    zebra-pattern: "even children indices (2,4,6,8) = Subtle, odd (1,3,5,7) = Default"
+
+  - name: "Orders Table SM (compact)"
+    node: "217:2"
+    page: Examples
+    approach: native-slots
+    density: SM  # Size=SM variants → th ~32px, td ~36px
+    features:
+      zebra: true
+      row-separators: true
+    columns:
+      - { key: order, width: 140, type: data-text, style: Bold }
+      - { key: amount, width: 120, type: data-text }
+      - { key: status, width: 130, type: data-badge }
+      - { key: payment, width: 120, type: data-text }
+    rows: 4
+    notes: "Version compact démontrant la densité SM. Même pattern column-first, hauteur fixe 36px."
+
+  - name: "Orders Table Empty State"
+    node: "218:1270"
+    page: Examples
+    approach: hybrid  # th instances header + custom empty content
+    features:
+      header-row: true  # 4 th instance (Order, Amount, Status, Payment) en HORIZONTAL
+      empty-content:
+        icon: "search magnifier (vector) dans cercle Neutral/colorBgSubtle 56×56"
+        title: "No orders found"
+        description: "Try adjusting your search or filters..."
+        cta: "Clear filters (Primary button style)"
+    notes: "Pattern empty state standard. Header visible + contenu centré vertical."
+
+  - name: "Orders Table v1 (OBSOLÈTE — flat frames)"
+    node: "154:524 (supprimé)"
+    page: Examples
+    status: REPLACED
+    notes: "Ancienne version utilisant des frames custom (mkCell, mkCheckbox, mkIconBtn). Remplacée par v2 puis v3."
+
+  - name: "Exemple 1 tab"
+    node: "146:6394"
+    page: Examples
+    columns:
+      - { label: Nom, width: 246, type: data-text }
+      - { label: Description, width: 417, type: data-text }
+      - { label: Status, width: 175, type: data-badge }
+      - { label: Responsable, width: 345, type: data-avatar-text }
+      - { label: Date limite, width: 175, type: data-text }
+      - { separator: true }
+      - { label: Actions, width: 68, type: actions }

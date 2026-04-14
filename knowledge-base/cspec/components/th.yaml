@@ -1,0 +1,121 @@
+# CSpec — Table Header Cell (th)
+# First building block for a dynamic table system.
+# Composable with: td (cell), tr (row), table (container)
+
+meta:
+  name: Table Header Cell
+  intent: component
+  tier: 3
+
+variants:
+  properties:
+    - name: Size
+      values: [SM, MD]
+    - name: Fill
+      values: [Light, Dark, White]
+    - name: Sort
+      values: [None, Asc, Desc]
+    - name: Icon
+      values: [False, True]
+
+# Variant behavior:
+#   Size=SM → height 32, fontSize 12, iconSize 14
+#   Size=MD → height 40, fontSize 14, iconSize 16
+#   Fill=Light → bg $Primary/colorPrimaryBg, border $Neutral/colorBorderSubtle, text $Neutral/colorText
+#   Fill=Dark  → bg $Primary/colorPrimary, border $Primary/colorPrimaryActive, text $Neutral/colorBg
+#   Fill=White → bg $Neutral/colorBgElevated, border $Neutral/colorBorder, text $Neutral/colorText
+#   Sort=None → sort-indicator hidden
+#   Sort=Asc  → caret-up active color, caret-down muted
+#   Sort=Desc → caret-down active color, caret-up muted
+#   Icon=True → leading icon visible (slot for contextual icon)
+#
+# DENSITY:
+#   Size=MD → height 40px (défaut)
+#   Size=SM → height ~32px (compact, pour tables denses)
+#
+# SORT — swapComponent SAFE:
+#   swapComponent() est SAFE sur th car il n'y a PAS de slot natif.
+#   Exemple: thInst.swapComponent(thSortAscComp) → change la variante Sort sans perte.
+#   Utilisé pour activer les indicateurs de tri sur les colonnes Order (Asc) et Date (Desc).
+#   Voir table.yaml iteration log #12 et learnings L038.
+
+layout:
+  type: COMPONENT
+  name: "Size=MD, Fill=Light, Sort=None, Icon=False"
+  direction: HORIZONTAL
+  sizing:
+    width: HUG
+    height: 40
+  gap: 8
+  padding:
+    top: 8
+    right: 12
+    bottom: 8
+    left: 12
+  counterAxisAlign: CENTER
+  primaryAxisAlign: MIN # aligné à gauche comme td (corrigé de SPACE_BETWEEN)
+  fills:
+    - type: SOLID
+      color: $Primary/colorPrimaryBg
+  strokes:
+    - type: SOLID
+      color: $Neutral/colorBorderSubtle
+  strokeWeight: 1
+  strokeAlign: INSIDE
+  children:
+    # Leading icon (visible only when Icon=True)
+    - type: INSTANCE
+      name: leading-icon
+      component_ref: icon
+      visible: false
+      sizing:
+        width: 16
+        height: 16
+
+    # Title text
+    - type: TEXT
+      name: Column # NOM RÉEL dans Figma (pas "title" — corrigé)
+      content: "Column"
+      font:
+        family: Inter
+        weight: 500
+        size: 14
+      textAutoResize: WIDTH_AND_HEIGHT
+      textAlignHorizontal: LEFT
+      sizing:
+        width: HUG
+        height: HUG
+      fills:
+        - type: SOLID
+          color: $Neutral/colorText
+      # layoutGrow: 0 — NE PAS mettre layoutGrow:1 (sinon texte centré visuellement)
+
+    # Sort indicator (2 stacked carets)
+    - type: FRAME
+      name: sort-indicator
+      direction: VERTICAL
+      visible: false
+      sizing:
+        width: HUG
+        height: HUG
+      gap: -2
+      counterAxisAlign: CENTER
+      children:
+        - type: INSTANCE
+          name: caret-up
+          component_ref: icon
+          sizing:
+            width: 10
+            height: 10
+          fills:
+            - type: SOLID
+              color: $Neutral/colorTextTertiary
+        - type: INSTANCE
+          name: caret-down
+          component_ref: icon
+          sizing:
+            width: 10
+            height: 10
+          fills:
+            - type: SOLID
+              color: $Neutral/colorTextTertiary

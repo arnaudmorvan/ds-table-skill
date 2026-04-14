@@ -1,0 +1,288 @@
+# CSpec — Table Data Cell (td)
+# Second building block for a dynamic table system.
+# Composable with: th (header), tr (row), table (container)
+# v3: Uses NATIVE FIGMA SLOTS — no detachInstance() needed.
+
+meta:
+  name: Table Data Cell
+  intent: component
+  tier: 3
+
+variants:
+  properties:
+    - name: Size
+      values: [SM, MD]
+    - name: Fill
+      values: [Default, Subtle]
+    - name: Content
+      values: [Text, Slot, TextSlot]
+    - name: Weight
+      values: [Regular, Bold]
+
+# Variant behavior:
+#   Size=SM → height 36, fontSize 12, padding 6/10
+#   Size=MD → height 44, fontSize 14, padding 8/12
+#   Fill=Default → bg transparent, bottom border $Neutral/colorBorderSubtle
+#   Fill=Subtle  → bg $Neutral/colorBgSubtle, bottom border $Neutral/colorBorderSubtle
+#   Content=Text     → text only (label "Value" visible, slot hidden)
+#   Content=Slot     → NATIVE SLOT only (label "Value" hidden, slot visible)
+#   Content=TextSlot → text + slot stacked vertically (both visible)
+#   Weight=Regular → Inter Regular
+#   Weight=Bold    → Inter Semi Bold (for key columns like names)
+
+# ──────────────────────────────────────────────
+# ⚠️ CRITICAL — swapComponent() DESTROYS SLOT CONTENT
+# ──────────────────────────────────────────────
+# NE JAMAIS utiliser swapComponent() sur un td Content=Slot
+# qui contient déjà du contenu injecté (badge, checkbox, avatar, buttons).
+# swapComponent() remplace l'instance entière → le slot revient au placeholder "slot".
+# Tout le contenu injecté est PERDU.
+#
+# Cas typique: zebra striping post-hoc (changer Fill=Default↔Subtle)
+# → Détruit le contenu de TOUTES les cellules slot ciblées.
+#
+# SOLUTION: Créer les td avec la bonne variante Fill dès le départ.
+#   Ex: rows paires → Fill=Default, rows impaires → Fill=Subtle
+#   (voir table.yaml pitfall P10/P11 et learnings L036/L037)
+#
+# NOTE: swapComponent() est SAFE sur th (pas de slot natif).
+
+# ──────────────────────────────────────────────
+# DENSITY (Size variants)
+# ──────────────────────────────────────────────
+# Size=MD → height 44-48px, fontSize 14, padding 8/12 (défaut)
+# Size=SM → height 36px (fixé), fontSize 12, padding 6/10 (compact)
+# Utiliser Size=SM pour les tables denses (ex: dashboard, monitoring).
+# Les composants injectés (badge, checkbox) gardent leur taille native.
+
+# ──────────────────────────────────────────────
+# ZEBRA STRIPING (alternance Fill)
+# ──────────────────────────────────────────────
+# Pour alterner les couleurs de fond des lignes:
+#   - Rows paires: td Fill=Default (transparent)
+#   - Rows impaires: td Fill=Subtle ($Neutral/colorBgSubtle)
+# IMPORTANT: choisir la variante Fill à la CRÉATION, pas après.
+# Ne PAS swapComponent() post-hoc (détruit le slot content).
+
+# ──────────────────────────────────────────────
+# ROW SEPARATORS (border bottom)
+# ──────────────────────────────────────────────
+# Pour les lignes de séparation horizontales:
+#   tdInst.strokes = [{ type: "SOLID", color: {r:0.9, g:0.9, b:0.9} }]
+#   tdInst.strokeBottomWeight = 1
+#   tdInst.strokeTopWeight = 0
+#   tdInst.strokeLeftWeight = 0
+#   tdInst.strokeRightWeight = 0
+#   tdInst.strokeAlign = "INSIDE"
+# Appliquer sur chaque td d'une row (toute la ligne a le même séparateur).
+
+# ──────────────────────────────────────────────
+# NATIVE SLOT — Figma Component Slot Feature
+# ──────────────────────────────────────────────
+#
+# Le td Content=Slot utilise un VRAI slot natif Figma (type="SLOT").
+# Cela permet d'injecter du contenu (badge, checkbox, button, avatar...)
+# DIRECTEMENT dans l'instance SANS detachInstance().
+#
+# Slot names dans le CS (un par variante):
+#   slot#176:0, slot2#176:25, ..., slot7#176:150
+# Node interne: type=SLOT, name="slot5" (pour Size=MD, Fill=Default)
+#
+# PATTERN D'UTILISATION:
+#   1. Créer le composant enfant (badge, checkbox, etc.)
+#   2. Override texte/props AVANT de l'injecter dans le slot
+#      (les enfants ne sont PLUS ACCESSIBLES après injection)
+#   3. Trouver le slot: tdInst.findOne(n => n.type === "SLOT")
+#   4. Supprimer le placeholder: slot.children[0].remove()
+#   5. slot.appendChild(childInstance)
+#   6. Le td RESTE UNE INSTANCE (pas de detach, connexion DS préservée)
+#
+# RESTRICTION CRITIQUE:
+#   Après injection dans le slot, les enfants de l'instance injectée
+#   NE SONT PLUS ACCESSIBLES via findOne/findAll/children.
+#   → Toujours configurer l'instance AVANT appendChild dans le slot.
+#
+# Propriétés du slot modifiables:
+#   slot.layoutMode = "HORIZONTAL"  (pour aligner plusieurs enfants)
+#   slot.itemSpacing = 8            (gap entre enfants)
+#   slot.counterAxisAlignItems = "CENTER"
+
+layout:
+  type: COMPONENT
+  name: "Size=MD, Fill=Default, Content=Text, Weight=Regular"
+  direction: HORIZONTAL
+  sizing:
+    width: HUG
+    height: 44
+  gap: 8
+  padding:
+    top: 8
+    right: 12
+    bottom: 8
+    left: 12
+  counterAxisAlign: CENTER
+  strokes:
+    - type: SOLID
+      color: $Neutral/colorBorderSubtle
+  strokeWeight: 1
+  strokeAlign: INSIDE
+  children:
+    - type: FRAME
+      name: cell-content
+      direction: VERTICAL
+      sizing:
+        width: HUG
+        height: HUG
+      gap: 2
+      children:
+        # Primary text label (visible in Text/TextSlot, HIDDEN in Slot)
+        - type: TEXT
+          name: Value # REAL name (pas "label" comme dans les anciens specs)
+          content: "Value"
+          font:
+            family: Inter
+            weight: 400
+            size: 14
+          textAutoResize: WIDTH_AND_HEIGHT
+          sizing:
+            width: HUG
+            height: HUG
+          fills:
+            - type: SOLID
+              color: $Neutral/colorText
+
+        # Native Figma Slot (visible in Slot/TextSlot)
+        - type: SLOT
+          name: slot5 # nom interne Figma
+          direction: HORIZONTAL
+          sizing:
+            width: HUG
+            height: HUG
+          gap: 4
+          counterAxisAlign: CENTER
+          fills: []
+          default-content:
+            - type: TEXT
+              name: slot
+              content: "slot" # placeholder, à supprimer avant injection
+
+# ──────────────────────────────────────────────
+# MCP Code Recipes (validated)
+# ──────────────────────────────────────────────
+recipes:
+  inject-badge:
+    description: "Injecter un badge dans un td Slot"
+    code: |
+      var bi = badgeComp.createInstance();
+      // Override AVANT injection (inaccessible après)
+      var ct = bi.findOne(function(n) { return n.type === "TEXT" && n.name === "content"; });
+      ct.characters = "Pending";
+      // Injecter
+      var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+      if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+      slot.appendChild(bi);
+      // tdInst.type === "INSTANCE" ✅
+
+  inject-checkbox:
+    description: "Injecter un checkbox dans un td Slot"
+    code: |
+      var cbI = cbComp.createInstance();
+      // Cacher TOUS les labels AVANT injection
+      cbI.findAll(function(n) { return n.type === "TEXT"; })
+         .forEach(function(n) { n.visible = false; });
+      var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+      if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+      slot.appendChild(cbI);
+
+  inject-secondary-buttons:
+    description: "Injecter N Secondary buttons dans un td Slot"
+    note: "Remplace l'ancien inject-ghost-buttons (Ghost→Secondary migration)"
+    code: |
+      var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+      if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+      slot.layoutMode = "HORIZONTAL";
+      slot.itemSpacing = 8;
+      var labels = ["Edit", "Del", "..."];
+      for (var b = 0; b < labels.length; b++) {
+        var btn = secondarySMComp.createInstance();
+        // Override AVANT injection
+        var btnTxt = btn.findOne(function(n) { return n.type === "TEXT" && n.name === "Button"; });
+        btnTxt.characters = labels[b];
+        btnTxt.fills = [{ type: "SOLID", color: { r: 0.067, g: 0.094, b: 0.153 } }];
+        slot.appendChild(btn);
+      }
+
+  inject-icon-buttons:
+    description: "Injecter des icon buttons (28x28) dans un td Slot — sans icon CS"
+    note: "Pattern utilisé pour la colonne Actions (table v3). 3 icônes: pencil, dots, X. Réduit la colonne de 230px à 120px."
+    code: |
+      var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+      if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+      slot.layoutMode = "HORIZONTAL";
+      slot.itemSpacing = 4;
+      slot.counterAxisAlignItems = "CENTER";
+      // --- Pencil icon (edit) ---
+      var pencilFrame = figma.createFrame();
+      pencilFrame.resize(28, 28);
+      pencilFrame.fills = [];
+      pencilFrame.layoutMode = "HORIZONTAL";
+      pencilFrame.counterAxisAlignItems = "CENTER";
+      pencilFrame.primaryAxisAlignItems = "CENTER";
+      var pencilVec = figma.createVector();
+      pencilVec.vectorPaths = [{ windingRule: "NONZERO", data: "M 10 2 L 12 4 L 4 12 L 2 12 L 2 10 Z" }];
+      pencilVec.resize(12, 12);
+      pencilVec.strokes = [{ type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } }];
+      pencilVec.strokeWeight = 1.5;
+      pencilVec.fills = [];
+      pencilFrame.appendChild(pencilVec);
+      slot.appendChild(pencilFrame);
+      // --- Dots icon (more) ---
+      var dotsFrame = figma.createFrame();
+      dotsFrame.resize(28, 28);
+      dotsFrame.fills = [];
+      dotsFrame.layoutMode = "HORIZONTAL";
+      dotsFrame.counterAxisAlignItems = "CENTER";
+      dotsFrame.primaryAxisAlignItems = "CENTER";
+      dotsFrame.itemSpacing = 3;
+      for (var d = 0; d < 3; d++) {
+        var dot = figma.createEllipse();
+        dot.resize(4, 4);
+        dot.fills = [{ type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } }];
+        dotsFrame.appendChild(dot);
+      }
+      slot.appendChild(dotsFrame);
+      // --- X icon (delete) ---
+      var xFrame = figma.createFrame();
+      xFrame.resize(28, 28);
+      xFrame.fills = [];
+      xFrame.layoutMode = "HORIZONTAL";
+      xFrame.counterAxisAlignItems = "CENTER";
+      xFrame.primaryAxisAlignItems = "CENTER";
+      var xVec = figma.createVector();
+      xVec.vectorPaths = [{ windingRule: "NONZERO", data: "M 1 1 L 11 11 M 11 1 L 1 11" }];
+      xVec.resize(12, 12);
+      xVec.strokes = [{ type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } }];
+      xVec.strokeWeight = 1.5;
+      xVec.fills = [];
+      xFrame.appendChild(xVec);
+      slot.appendChild(xFrame);
+
+  inject-avatar-text:
+    description: "Injecter avatar + nom dans un td Slot"
+    code: |
+      var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+      if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+      slot.layoutMode = "HORIZONTAL";
+      slot.itemSpacing = 12;
+      slot.counterAxisAlignItems = "CENTER";
+      // Avatar (configurer AVANT)
+      var ai = avatarComp.createInstance();
+      ai.resize(24, 24);
+      slot.appendChild(ai);
+      // Nom
+      var nameTxt = figma.createText();
+      nameTxt.fontName = { family: "Inter", style: "Regular" };
+      nameTxt.fontSize = 14;
+      nameTxt.characters = "John Doe";
+      nameTxt.textAutoResize = "WIDTH_AND_HEIGHT";
+      slot.appendChild(nameTxt);

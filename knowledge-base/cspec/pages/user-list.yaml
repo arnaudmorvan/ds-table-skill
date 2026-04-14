@@ -1,0 +1,200 @@
+# CSpec — User List Page (Structure)
+
+meta:
+  name: "User List"
+  level: 3
+  intent: page
+  target_page: "📐 Examples"
+  consumes:
+    components: [navbar, sidebar, button, text-field, select, badge, alert]
+    builders: [table]
+  dimensions:
+    width: 1440
+    height: 1200
+  phase: "09-examples"
+  call: "9d"
+
+layout:
+  type: FRAME
+  name: "User List"
+  direction: VERTICAL
+  sizing:
+    width: 1440
+    height: 1200
+  children:
+    - type: INSTANCE
+      component: "navbar"
+      sizing: { width: FILL }
+    - type: FRAME
+      name: "body"
+      direction: HORIZONTAL
+      sizing: { width: FILL, height: FILL }
+      children:
+        - type: INSTANCE
+          component: "sidebar"
+          sizing: { height: FILL }
+        - type: FRAME
+          name: "main"
+          direction: VERTICAL
+          sizing: { width: FILL, height: FILL }
+          children:
+            - type: FRAME
+              name: "header-row"
+              direction: HORIZONTAL
+              sizing: { width: FILL }
+              primaryAxisAlignItems: SPACE_BETWEEN
+              children:
+                - type: FRAME
+                  name: "titles"
+                  direction: VERTICAL
+                  children:
+                    - type: TEXT
+                      name: "page-title"
+                      content: "Users"
+                    - type: TEXT
+                      name: "page-subtitle"
+                      content: "Manage team members and their permissions."
+                - type: INSTANCE
+                  component: "button"
+                  variant: { type: "Primary", size: "MD" }
+                  overrides: { label: "Add user" }
+            - type: FRAME
+              name: "filters-row"
+              direction: HORIZONTAL
+              sizing: { width: FILL }
+              children:
+                - type: INSTANCE
+                  component: "text field"
+                  variant: { size: "MD", type: "Search" }
+                  sizing: { width: FILL }
+                  overrides: { value: "Search users..." }
+                - type: INSTANCE
+                  component: "select"
+                  variant: { size: "MD" }
+                  sizing: { width: 180 }
+                  overrides: { value: "Role" }
+                - type: INSTANCE
+                  component: "select"
+                  variant: { size: "MD" }
+                  sizing: { width: 180 }
+                  overrides: { value: "Status" }
+                - type: INSTANCE
+                  component: "badge"
+                  variant: { variant: "primary", size: "md" }
+                  overrides: { content: "Active" }
+            - type: FRAME
+              name: "table-section"
+              direction: VERTICAL
+              sizing: { width: FILL }
+              children:
+                - type: FRAME
+                  name: "table-placeholder"
+                  description: "Table instance (si component Table disponible)"
+                  sizing: { width: FILL, height: 500 }
+                - type: FRAME
+                  name: "pagination-row"
+                  direction: HORIZONTAL
+                  sizing: { width: FILL }
+                  primaryAxisAlignItems: MAX
+                  children:
+                    - type: TEXT
+                      name: "pagination-text"
+                      content: "1 - 10 of 48"
+                    - type: FRAME
+                      name: "pagination-buttons"
+                      direction: HORIZONTAL
+                      children:
+                        - type: INSTANCE
+                          component: "button"
+                          variant: { type: "Secondary", size: "SM" }
+                          overrides: { label: "Previous" }
+                        - type: INSTANCE
+                          component: "button"
+                          variant: { type: "Secondary", size: "SM" }
+                          overrides: { label: "Next" }
+            - type: INSTANCE
+              component: "alert"
+              variant: { type: "warning" }
+              sizing: { width: FILL }
+              overrides:
+                title: "Warning"
+                description: "2 users have pending invitations"
+
+template: "list-detail"
+
+defaults:
+  root:
+    fill: $Neutral/colorBg
+
+  main:
+    padding: 32
+    gap: 24
+
+  titles:
+    gap: 4
+
+  page-title:
+    font: heading/xl-bold
+    color: $Neutral/colorText
+
+  page-subtitle:
+    font: body/sm-regular
+    color: $Neutral/colorTextSecondary
+
+  filters-row:
+    gap: 12
+
+  table-section:
+    gap: 0
+
+  table-placeholder:
+    fill: $Neutral/colorBgElevated
+    cornerRadius: $Radius/lg
+    border: $Neutral/colorBorder
+    borderWidth: 1
+
+  pagination-row:
+    padding: 16
+
+  pagination-text:
+    font: body/sm-regular
+    color: $Neutral/colorTextSecondary
+
+  pagination-buttons:
+    gap: 8
+
+ds_components:
+  - name: "navbar"
+    usage: "En-tête"
+  - name: "sidebar"
+    usage: "Navigation latérale"
+  - name: "button"
+    usage: "Add user + pagination"
+  - name: "text field"
+    usage: "Barre de recherche"
+    variant: { size: "MD", type: "Search" }
+  - name: "select"
+    usage: "Filtres Role et Status"
+  - name: "badge"
+    usage: "Tag filtre actif"
+  - name: "alert"
+    usage: "Warning invitations"
+    variant: { type: "warning" }
+
+content:
+  title: "Users"
+  subtitle: "Manage team members and their permissions."
+  search: "Search users..."
+  filters: ["Role", "Status"]
+  pagination: "1 - 10 of 48"
+
+learnings: []
+
+acceptance:
+  - "Structure Navbar + Sidebar + Main"
+  - "Barre de filtres fonctionnelle (search + selects + tag)"
+  - "Table placeholder avec border et radius"
+  - "Pagination alignée à droite"
+  - "Composants instanciés depuis _Components"
+  - "Textes réalistes"
+  - "Pas d'emoji"
