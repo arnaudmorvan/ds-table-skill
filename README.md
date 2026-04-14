@@ -1,80 +1,159 @@
-# ds-table-skill
+# ds-table
 
-> Copilot Skill pour générer des **data tables Figma** via MCP — architecture column-first avec native slots (v3).
+A skill that generates **data tables in Figma** via MCP — column-first architecture with native slots (v3).
 
-## Qu'est-ce que c'est ?
+## What It Does
 
-Un skill Copilot (GitHub Copilot Agent) qui permet de construire des tableaux de données complets dans Figma. Il utilise le MCP Figma pour créer des tables avec :
+A Copilot skill (GitHub Copilot Agent) that builds complete data tables in Figma. It uses the Figma MCP to create tables with:
 
-- **6 types de colonnes** : checkbox, texte, avatar+texte, badge, boutons d'action, icônes
-- **Native slots Figma** : les cellules td restent des instances connectées au DS (zero `detachInstance()`)
+- **6 column types**: checkbox, text, avatar+text, badge, action buttons, icons
+- **Native Figma slots**: td cells stay as connected DS instances (zero `detachInstance()`)
 - **Zebra striping**, **sort indicators**, **empty states**
-- **Densités** : MD (défaut) et SM (compact)
+- **Densities**: MD (default) and SM (compact)
+
+## Example
+
+![Team Members Table](assets/example-table.png)
+
+> Table generated with ds-table: checkbox, avatar+name, status badges, role, email, team badges, action icons — with zebra striping and sort indicator.
+
+## Prerequisites
+
+- A Figma account with a personal access token — get one from Figma → Settings → Security → Personal access tokens
+- A **Figma Design System** with the Component Sets: `th`, `td`, `badge`, `button`, `checkbox`, `avatar-profile-photo`
+- An AI IDE with agent capabilities and MCP support (VS Code + GitHub Copilot, Cursor, Windsurf, Claude Code, etc.)
+- The Figma MCP server connected to your AI agent
+- The Node IDs in `table.yaml` must match your Figma file
 
 ## Installation
 
-### Option 1 — Comme skill Copilot
+### GitHub Copilot (VS Code)
 
-Copier le dossier dans `~/.copilot/skills/ds-table/` :
+1. Clone the repo into your skills directory:
 
 ```bash
-git clone https://github.com/<user>/ds-table-skill.git ~/.copilot/skills/ds-table
+cd ~/.copilot/skills
+git clone https://github.com/arnaudmorvan/ds-table-skill.git ds-table
 ```
 
-Puis ajouter dans `.github/copilot-instructions.md` ou le fichier d'instructions de votre workspace :
+2. Add the Figma MCP server to your `.vscode/mcp.json`:
 
-```yaml
-<skill>
-  <name>ds-table</name>
-  <description>Génère des data tables Figma via MCP (column-first, native slots v3)</description>
-  <file>~/.copilot/skills/ds-table/SKILL.md</file>
-</skill>
+```json
+{
+  "servers": {
+    "figma": {
+      "type": "sse",
+      "url": "https://mcp.figma.com/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_FIGMA_ACCESS_TOKEN"
+      }
+    }
+  }
+}
 ```
 
-### Option 2 — Comme référence Knowledge Base
+3. The skill is available immediately — no restart needed.
 
-Copier `knowledge-base/` dans le dossier de votre projet et référencer les YAML depuis votre workflow.
+### Claude Desktop
 
-## Prérequis
+1. **Open the Claude Desktop config file:**
 
-- **Figma MCP** configuré et fonctionnel
-- Un **Design System Figma** avec les Component Sets : `th`, `td`, `badge`, `button`, `checkbox`, `avatar-profile-photo`
-- Les Node IDs dans `table.yaml` sont à adapter à votre fichier Figma
+```bash
+open ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
+
+2. **Make sure the Figma MCP server is connected.** Add or verify:
+
+```json
+{
+  "mcpServers": {
+    "figma": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/figma-mcp-server@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "YOUR_FIGMA_ACCESS_TOKEN"
+      }
+    }
+  }
+}
+```
+
+3. **Clone the repo** into your skills directory (find the `skills/user` path in your config):
+
+```bash
+cd /path/to/your/skills/user
+git clone https://github.com/arnaudmorvan/ds-table-skill.git ds-table
+```
+
+> **Figma token:** Go to Figma → Settings → Security → Personal access tokens → Generate new token.
+
+4. **Restart Claude Desktop.** Skills are loaded at startup.
+
+### Claude Code (terminal)
+
+1. Add the Figma MCP server to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "figma": {
+      "url": "https://mcp.figma.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_FIGMA_ACCESS_TOKEN"
+      }
+    }
+  }
+}
+```
+
+2. Clone the repo:
+
+```bash
+cd ~/.copilot/skills
+git clone https://github.com/arnaudmorvan/ds-table-skill.git ds-table
+```
+
+### Alternative — Knowledge Base only
+
+Copy `knowledge-base/` into your project folder and reference the YAML specs from your workflow.
 
 ## Structure
 
 ```
-ds-table-skill/
-  SKILL.md                              ← Point d'entrée du skill
-  README.md                             ← Ce fichier
+ds-table/
+  SKILL.md                              ← Skill entry point
+  README.md                             ← This file
+  assets/
+    example-table.png                   ← Example output screenshot
   knowledge-base/
     cspec/
       builders/
-        table.yaml                      ← Spec principale (architecture, recipes, pitfalls)
+        table.yaml                      ← Main spec (architecture, recipes, pitfalls)
       components/
         th.yaml                         ← Table Header Cell (variants, layout)
         td.yaml                         ← Table Data Cell (native slot pattern)
       pages/
-        template-table.yaml             ← Layout template SaaS (sidebar+table)
-        user-list.yaml                  ← Exemple complet de page avec table
-      property-map.yaml                 ← Mapping Figma ↔ CSS ↔ React
+        template-table.yaml             ← SaaS layout template (sidebar+table)
+        user-list.yaml                  ← Full page example with table
+      property-map.yaml                 ← Figma ↔ CSS ↔ React mapping
 ```
 
-## Utilisation
+## How to Use
 
-Demander à Copilot :
+Ask your AI agent:
 
-> "Crée une table Orders dans Figma avec 8 lignes, colonnes checkbox, order, customer, date, status, amount, payment et actions."
+> "Create a Team Members table in Figma with 10 rows, columns: checkbox, name, status, role, email, teams, actions."
 
-Le skill va :
-1. Lire les specs YAML pour comprendre l'architecture
-2. Générer 2 appels MCP (structure + contenu complexe)
-3. Construire la table avec zebra striping et sort indicators
+The skill will:
+1. Read the YAML specs to understand the architecture
+2. Generate 2 MCP calls (structure + complex content)
+3. Build the table with zebra striping and sort indicators
 
-## Provenance
+## MCP Tools Used
 
-Extrait du projet [DS-SKILLS](https://github.com/arnaudmorvan/DS-SKILLS) — skill `ds-init` (Knowledge Base → CSpec → builders/table).
+- `mcp_figma_get_design_context` — Read DS component structure (th, td, badges)
+- `mcp_figma_use_figma` — Generate and inject table via Figma Plugin API
 
-## Licence
+## License
 
 MIT
