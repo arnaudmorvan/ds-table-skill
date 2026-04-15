@@ -1,0 +1,557 @@
+# CSpec — Table (row-first layout) — v4 ROW-BASED + NATIVE SLOTS
+# Complete table system using row-based auto layout with NATIVE COMPONENTS.
+# Pattern: Table=VERTICAL → Row=HORIZONTAL → th/td instances
+# v4: Same native slot pattern as v3, but row-first architecture.
+# td remain INSTANCES (DS connection preserved, zero detachInstance).
+#
+# WHY ROW-FIRST:
+# - Zebra striping = fills on Row frame (trivial, no per-cell logic)
+# - Row selection  = fills on Row frame (same)
+# - Add/remove row = add/remove 1 frame (not touch every column)
+# - Mental model   = matches HTML <tr> pattern
+# - Slot safety    = same as column-first (no swapComponent needed for zebra)
+#
+# TRADEOFF vs column-first:
+# - Column widths must be set per-cell (FIXED width on each td/th instance)
+#   → use a colWidths map and apply consistently
+# - Column-first is kept in table-column.yaml for backward compatibility
+#
+# -------------------------------------------------------------------
+# ITERATION LOG
+# -------------------------------------------------------------------
+# v3 column-first: validated, 9 demo tables built
+# v4 row-first: NEW — same components, different layout nesting
+
+meta:
+  name: Table (row-first)
+  level: 2  # builder
+  intent: builder
+  architecture: row-first
+  approach: native-slots
+  consumes:
+    components: [th, td, badge, button, checkbox, avatar]
+
+# ──────────────────────────────────────────────
+# Architecture overview
+# ──────────────────────────────────────────────
+#
+# Table (VERTICAL, gap=0, cornerRadius=8, DROP_SHADOW)
+#   ├── Header Row (HORIZONTAL, gap=0)
+#   │   ├── th "Checkbox"   (FIXED 60px width)
+#   │   ├── th "Name"       (FIXED 230px width)
+#   │   ├── th "Status"     (FIXED 160px width)
+#   │   └── th "Actions"    (FIXED 230px width)
+#   ├── Data Row 1 (HORIZONTAL, gap=0, fills=transparent)
+#   │   ├── td Slot         (FIXED 60px → checkbox)
+#   │   ├── td Slot         (FIXED 230px → avatar+name)
+#   │   ├── td Slot         (FIXED 160px → badge)
+#   │   └── td Slot         (FIXED 230px → action buttons)
+#   ├── Data Row 2 (HORIZONTAL, gap=0, fills=Subtle)  ← zebra
+#   │   └── ...
+#   └── Data Row N
+#       └── ...
+
+# ──────────────────────────────────────────────
+# Auto Layout rules
+# ──────────────────────────────────────────────
+auto-layout-rules:
+  table:
+    direction: VERTICAL
+    sizing:
+      width: HUG    # sum of column widths (driven by row children)
+      height: HUG   # header row + N × data row height
+    padding: 0
+    gap: 0
+    fills:
+      - type: SOLID
+        color: $Neutral/colorBgElevated
+    cornerRadius: 8
+    clipsContent: true
+    effects:
+      - type: DROP_SHADOW
+        color: { r: 0, g: 0, b: 0, a: 0.08 }
+        offset: { x: 0, y: 2 }
+        radius: 8
+        blendMode: NORMAL  # CRITICAL — sans blendMode l'ombre est ignorée
+
+  header-row:
+    direction: HORIZONTAL
+    sizing:
+      width: HUG    # sum of th widths
+      height: HUG   # th height (~40px MD, ~32px SM)
+    padding: 0
+    gap: 0
+    fills: []  # transparent (th cells have their own fill)
+
+  data-row:
+    direction: HORIZONTAL
+    sizing:
+      width: HUG    # sum of td widths
+      height: FIXED  # 48px (MD) or 36px (SM) — uniform row height
+    padding: 0
+    gap: 0
+    fills: []  # transparent for default rows
+    zebra-fill:
+      - type: SOLID
+        color: $Neutral/colorBgSubtle  # for alternating rows
+    notes: |
+      ZEBRA AVANTAGE ROW-FIRST:
+      Appliquer fills sur le ROW FRAME directement.
+      Plus besoin de choisir Default/Subtle par cellule.
+      Les td peuvent tous être Fill=Default, le fond du Row fait le zebra.
+
+# ──────────────────────────────────────────────
+# Cell sizing (key difference vs column-first)
+# ──────────────────────────────────────────────
+cell-sizing:
+  strategy: |
+    Chaque th et td a une largeur FIXED individuelle.
+    Utiliser un map colWidths appliqué consistamment sur header et data rows.
+    
+    var colWidths = [
+      { key: "checkbox", width: 60 },
+      { key: "name",     width: 230 },
+      { key: "status",   width: 160 },
+      { key: "role",     width: 170 },
+      { key: "email",    width: 230 },
+      { key: "actions",  width: 120 }
+    ];
+    
+  th-sizing: |
+    thInst.resize(colWidths[i].width, thInst.height);
+    # Largeur FIXED, hauteur auto (HUG du header row)
+    
+  td-sizing: |
+    tdInst.resize(colWidths[i].width, 48);
+    tdInst.primaryAxisSizingMode = "FIXED";
+    # Largeur FIXED par cellule, hauteur FIXED 48px
+
+# ──────────────────────────────────────────────
+# Header cell (same as column-first)
+# ──────────────────────────────────────────────
+header-cell:
+  type: th-instance
+  variants:
+    Size: MD
+    Fill: Light
+    Sort: None
+    Icon: "False"
+  override:
+    text-node-name: "Column"
+  sizing:
+    width: FIXED  # ← DIFFÉRENCE: FIXED (pas FILL) car pas de column parent
+    height: HUG
+
+# ──────────────────────────────────────────────
+# Data cell (same component, different sizing)
+# ──────────────────────────────────────────────
+data-cell:
+  type: td-instance
+  variants:
+    simple-text:
+      Size: MD
+      Fill: Default    # TOUJOURS Default — le zebra est sur le Row frame
+      Content: Text
+      Weight: Regular
+    slot:
+      Size: MD
+      Fill: Default    # TOUJOURS Default — zebra sur Row
+      Content: Slot
+      Weight: Regular
+  override:
+    text-node-name: "Value"
+  sizing:
+    width: FIXED   # largeur par colonne (colWidths map)
+    height: FIXED  # 48px uniforme
+  zebra-note: |
+    ROW-FIRST SIMPLIFIÉ:
+    Pas besoin de tdSubtle/tdSubSlot.
+    TOUTES les td utilisent Fill=Default.
+    Le zebra est géré par row.fills (fond du row frame).
+    → Élimine le pitfall P10 (swapComponent détruit slots)
+    → Élimine le pitfall P11 (zebra build-time planning)
+
+# ──────────────────────────────────────────────
+# Column types (identiques à column-first)
+# ──────────────────────────────────────────────
+# Voir table-column.yaml section column-types pour les détails complets.
+# Les types checkbox, data-text, data-avatar-text, data-badge, actions,
+# icon-actions sont identiques. Seul le parent change: Row frame au lieu de Column frame.
+
+column-types:
+  - name: checkbox
+    width: 60
+    cell: td Content=Slot → checkbox instance (labels hidden AVANT injection)
+
+  - name: data-text
+    width: 160-170
+    cell: td Content=Text → override "Value"
+
+  - name: data-avatar-text
+    width: 230
+    cell: td Content=Slot → avatar(24×24) + createText dans slot natif
+
+  - name: data-badge
+    width: 160
+    cell: td Content=Slot → badge instance (texte overridé AVANT injection)
+
+  - name: actions
+    width: 230
+    cell: td Content=Slot → Secondary button instances (text color fix)
+
+  - name: icon-actions
+    width: 120
+    cell: td Content=Slot → icon-btn frames (28×28, vector icons)
+
+# ──────────────────────────────────────────────
+# Cell components mapping (same as column-first)
+# ──────────────────────────────────────────────
+cell-components:
+  th:
+    component-set: th
+    text-override: "Column"
+  td:
+    component-set: td
+    text-override: "Value"
+  badge:
+    component-set: badge
+    text-override: "content"
+  button:
+    component-set: button
+    text-override: "Button"
+    secondary-text-fix: true
+  avatar-profile-photo:
+    component-set: avatar-profile-photo
+    resize: "24×24"
+  checkbox:
+    component-set: checkbox
+    hide-labels: true
+
+# ──────────────────────────────────────────────
+# Build recipe — ROW-FIRST
+# ──────────────────────────────────────────────
+build-recipe:
+  strategy: |
+    Diviser en 2 appels MCP maximum:
+      Call 1: Table frame + header row + all data rows with td Content=Text columns
+      Call 2: Fill slot columns (checkbox, avatar, badge, actions) across all rows
+    ZERO detachInstance() — toutes les td restent des INSTANCES.
+    RULE CRITIQUE: configurer les enfants AVANT slot.appendChild() (inaccessibles après).
+
+  critical-patterns:
+    variable-helpers: |
+      # IDENTIQUE à table-column.yaml — copier au début de chaque call
+      var allV = await figma.variables.getLocalVariablesAsync("COLOR");
+      var colls = await figma.variables.getLocalVariableCollectionsAsync();
+      function gv(n) { return allV.find(function(v) { return v.name === n; }); }
+      function rv(o) {
+        if (!o) return { r: 0.9, g: 0.9, b: 0.9 };
+        var c = colls.find(function(x) { return x.id === o.variableCollectionId; });
+        if (!c) return { r: 0.9, g: 0.9, b: 0.9 };
+        var m = c.modes[0].modeId, val = o.valuesByMode[m];
+        if (val && val.r !== undefined) return val;
+        if (val && val.type === "VARIABLE_ALIAS") {
+          var t = allV.find(function(v) { return v.id === val.id; });
+          if (t) return rv(t);
+        }
+        return { r: 0.9, g: 0.9, b: 0.9 };
+      }
+      function bf(node, v) {
+        if (!v || !node.fills || !node.fills.length) return;
+        var f = JSON.parse(JSON.stringify(node.fills));
+        f[0] = figma.variables.setBoundVariableForPaint(f[0], "color", v);
+        node.fills = f;
+      }
+
+    component-set-helpers: |
+      var thCS = await figma.getNodeByIdAsync("1:1820");
+      var tdCS = await figma.getNodeByIdAsync("1:2001");
+      function findV(cs, variantName) {
+        return cs.children.find(function(c) { return c.name === variantName; });
+      }
+      var thLight = findV(thCS, "Size=MD, Fill=Light, Sort=None, Icon=False");
+      var tdText  = findV(tdCS, "Size=MD, Fill=Default, Content=Text, Weight=Regular");
+      var tdBold  = findV(tdCS, "Size=MD, Fill=Default, Content=Text, Weight=Bold");
+      var tdSlot  = findV(tdCS, "Size=MD, Fill=Default, Content=Slot, Weight=Regular");
+      # PAS BESOIN de tdSubtle/tdSubSlot — zebra géré par Row fills
+
+    slot-cell-factory: |
+      # Adapté pour row-first: parent = rowFrame (HORIZONTAL) au lieu de colFrame (VERTICAL)
+      # Toujours Fill=Default — le Row frame gère le zebra
+      function mkSlotCell(rowFrame, width) {
+        var inst = tdSlot.createInstance();
+        rowFrame.appendChild(inst);
+        inst.resize(width, 48);
+        inst.primaryAxisSizingMode = "FIXED";
+        var slot = inst.findOne(function(n) { return n.type === "SLOT"; });
+        if (slot.children[0] && slot.children[0].type === "TEXT") {
+          slot.children[0].remove();
+        }
+        return { inst: inst, slot: slot };
+      }
+
+  steps:
+    - step: 1
+      action: "Préparer fonts + variables + Component Sets"
+      code: |
+        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        await figma.loadFontAsync({ family: "Inter", style: "Medium" });
+        await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+        await figma.loadFontAsync({ family: "Inter", style: "Bold" });
+        var vBgElev = gv("Neutral/colorBgElevated");
+        var vBgSub  = gv("Neutral/colorBgSubtle");
+        # + charger thCS, tdCS, findV, variants (voir component-set-helpers)
+
+    - step: 2
+      action: "Créer le frame table (VERTICAL)"
+      code: |
+        var table = figma.createFrame();
+        table.name = "Team Members Table";
+        table.layoutMode = "VERTICAL";   # ← KEY DIFFERENCE: VERTICAL
+        table.primaryAxisSizingMode = "AUTO";
+        table.counterAxisSizingMode = "AUTO";
+        table.itemSpacing = 0;
+        table.cornerRadius = 8;
+        table.clipsContent = true;
+        table.fills = [{ type: "SOLID", color: rv(vBgElev) }];
+        bf(table, vBgElev);
+        table.effects = [{
+          type: "DROP_SHADOW", visible: true,
+          color: { r: 0, g: 0, b: 0, a: 0.08 },
+          offset: { x: 0, y: 2 }, radius: 8, spread: 0,
+          blendMode: "NORMAL"
+        }];
+
+    - step: 3
+      action: "Définir le column widths map"
+      code: |
+        # Adapter selon les colonnes demandées
+        var cols = [
+          { key: "checkbox", width: 60,  type: "checkbox" },
+          { key: "name",     width: 230, type: "data-avatar-text", header: "Name" },
+          { key: "status",   width: 160, type: "data-badge", header: "Status" },
+          { key: "role",     width: 170, type: "data-text", header: "Role" },
+          { key: "email",    width: 230, type: "data-text", header: "Email address" },
+          { key: "teams",    width: 200, type: "data-badge", header: "Teams" },
+          { key: "actions",  width: 120, type: "icon-actions", header: "Actions" }
+        ];
+
+    - step: 4
+      action: "Header row — une row HORIZONTAL avec N th instances"
+      code: |
+        var headerRow = figma.createFrame();
+        headerRow.name = "header-row";
+        headerRow.layoutMode = "HORIZONTAL";
+        headerRow.primaryAxisSizingMode = "AUTO";
+        headerRow.counterAxisSizingMode = "AUTO";
+        headerRow.itemSpacing = 0;
+        headerRow.fills = [];
+        table.appendChild(headerRow);
+
+        for (var c = 0; c < cols.length; c++) {
+          var thInst = thLight.createInstance();
+          headerRow.appendChild(thInst);
+          thInst.resize(cols[c].width, thInst.height);
+          # Override header text
+          if (cols[c].header) {
+            var thTxt = thInst.findOne(function(n) {
+              return n.type === "TEXT" && n.name === "Column";
+            });
+            thTxt.characters = cols[c].header;
+          }
+          # Sort indicator (optional)
+          if (cols[c].sort) {
+            var thSort = findV(thCS, "Size=MD, Fill=Light, Sort=" + cols[c].sort + ", Icon=False");
+            thInst.swapComponent(thSort);  # safe — th has no slots
+          }
+        }
+
+    - step: 5
+      action: "Data rows — Call 1: structure + text columns"
+      code: |
+        var rows = [];  # store row frames for Call 2 slot filling
+        var rowCount = 10;  # adapter selon la demande
+
+        for (var r = 0; r < rowCount; r++) {
+          var row = figma.createFrame();
+          row.name = "row-" + r;
+          row.layoutMode = "HORIZONTAL";
+          row.primaryAxisSizingMode = "AUTO";
+          row.counterAxisSizingMode = "FIXED";
+          row.resize(100, 48);  # height=48 FIXED, width auto
+          row.itemSpacing = 0;
+          row.fills = [];
+          table.appendChild(row);
+          row.layoutSizingHorizontal = "HUG";
+
+          # ZEBRA — fills sur le Row frame (simple !)
+          if (r % 2 === 1) {
+            row.fills = [{ type: "SOLID", color: rv(vBgSub) }];
+            bf(row, vBgSub);
+          }
+
+          # Remplir les colonnes TEXT simples maintenant
+          for (var c = 0; c < cols.length; c++) {
+            if (cols[c].type === "data-text") {
+              var comp = cols[c].bold ? tdBold : tdText;
+              var tdInst = comp.createInstance();
+              row.appendChild(tdInst);
+              tdInst.resize(cols[c].width, 48);
+              tdInst.primaryAxisSizingMode = "FIXED";
+              var valTxt = tdInst.findOne(function(n) {
+                return n.type === "TEXT" && n.name === "Value";
+              });
+              valTxt.characters = rowData[r][cols[c].key];
+            } else {
+              # Placeholder: créer un td vide pour les colonnes slot (rempli en Call 2)
+              var tdInst = tdSlot.createInstance();
+              row.appendChild(tdInst);
+              tdInst.resize(cols[c].width, 48);
+              tdInst.primaryAxisSizingMode = "FIXED";
+            }
+          }
+          rows.push(row);
+        }
+
+    - step: 6
+      action: "Call 2 — Remplir les colonnes slot (checkbox, badge, avatar, actions)"
+      notes: |
+        Pour chaque row, itérer sur les enfants td et remplir les slots
+        selon le type de colonne.
+
+        # Retrouver les rows par nom
+        var table = figma.currentPage.findOne(function(n) {
+          return n.name === "Team Members Table";
+        });
+        var rows = table.children.filter(function(n) {
+          return n.name.startsWith("row-");
+        });
+
+        Pour chaque row:
+          var cells = row.children;  # td instances dans l'ordre des colonnes
+          # cells[0] = checkbox (index 0)
+          # cells[1] = name/avatar (index 1)
+          # cells[2] = status badge (index 2)
+          # etc.
+
+    - step: 7
+      action: "Checkbox cells (Call 2)"
+      notes: |
+        var cbCS = await figma.getNodeByIdAsync("3:2423");
+        var cbComp = findV(cbCS, "checked=false, size=SM, state=Default");
+
+        for (var r = 0; r < rows.length; r++) {
+          var tdInst = rows[r].children[0];  # checkbox column = index 0
+          var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+          if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+          var cbInst = cbComp.createInstance();
+          cbInst.findAll(function(n) { return n.type === "TEXT"; })
+                .forEach(function(n) { n.visible = false; });
+          slot.appendChild(cbInst);
+        }
+
+    - step: 8
+      action: "Avatar + name cells (Call 2)"
+      notes: |
+        var avatarCS = await figma.getNodeByIdAsync("2:494");
+        var avatarComp = findV(avatarCS, "Placeholder=True, Text=False, Size=md");
+
+        for (var r = 0; r < rows.length; r++) {
+          var tdInst = rows[r].children[1];  # name column = index 1
+          var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+          if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+          slot.layoutMode = "HORIZONTAL";
+          slot.itemSpacing = 12;
+          slot.counterAxisAlignItems = "CENTER";
+          var ai = avatarComp.createInstance();
+          ai.resize(24, 24);
+          slot.appendChild(ai);
+          var nameTxt = figma.createText();
+          nameTxt.fontName = { family: "Inter", style: "Regular" };
+          nameTxt.fontSize = 14;
+          nameTxt.characters = rowData[r].name;
+          nameTxt.textAutoResize = "WIDTH_AND_HEIGHT";
+          slot.appendChild(nameTxt);
+        }
+
+    - step: 9
+      action: "Badge cells (Call 2)"
+      notes: |
+        var badgeCS = await figma.getNodeByIdAsync("2:521");
+        # Map status → badge variant
+        var badges = {
+          Active:   findV(badgeCS, "variant=success, size=sm"),
+          Pending:  findV(badgeCS, "variant=warning, size=sm"),
+          Inactive: findV(badgeCS, "variant=danger, size=sm")
+        };
+
+        for (var r = 0; r < rows.length; r++) {
+          var tdInst = rows[r].children[2];  # status column = index 2
+          var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+          if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+          var bi = badges[rowData[r].status].createInstance();
+          var ct = bi.findOne(function(n) {
+            return n.type === "TEXT" && n.name === "content";
+          });
+          ct.characters = rowData[r].status;
+          slot.appendChild(bi);
+        }
+
+    - step: 10
+      action: "Icon action cells (Call 2)"
+      notes: |
+        for (var r = 0; r < rows.length; r++) {
+          var tdInst = rows[r].children[actionColIndex];
+          var slot = tdInst.findOne(function(n) { return n.type === "SLOT"; });
+          if (slot.children[0] && slot.children[0].type === "TEXT") slot.children[0].remove();
+          slot.layoutMode = "HORIZONTAL";
+          slot.itemSpacing = 6;
+          slot.counterAxisAlignItems = "CENTER";
+          # Créer 3 icon-btn frames (pencil, trash, more)
+          # ... (même pattern que table-column.yaml)
+        }
+
+  pitfalls:
+    # Pitfalls hérités de column-first (toujours valides)
+    - id: P1
+      issue: "Noms internes des composants ≠ specs YAML"
+      fix: "th='Column', td='Value', badge='content', button='Button'"
+
+    - id: P2
+      issue: "Child inaccessible APRÈS injection dans slot natif"
+      fix: "CONFIGURER AVANT slot.appendChild()"
+
+    - id: P3
+      issue: "Secondary button texte invisible (blanc)"
+      fix: "Override btnTxt.fills AVANT injection"
+
+    - id: P5
+      issue: "Placeholder 'slot' texte visible"
+      fix: "slot.children[0].remove() avant injection"
+
+    - id: P8
+      issue: "Crash MCP rollback partiel"
+      fix: "Séparer Call 1 (structure+text) et Call 2 (slots)"
+
+    # Pitfalls RÉSOLUS par row-first (plus applicables)
+    # P4 (action column width) → toujours valide, width FIXED par cell
+    # P6 (colonnes effondrées) → NON APPLICABLE — pas de column frames
+    # P7 (checkbox labels) → toujours valide
+    # P9 (décalage vertical) → RÉSOLU — Row height FIXED uniforme
+    # P10 (swapComponent détruit slots) → RÉSOLU — pas de swap pour zebra
+    # P11 (zebra build-time planning) → RÉSOLU — zebra = row.fills
+
+    - id: P12
+      issue: "Row-first: largeurs incohérentes entre header et data rows"
+      cause: "Chaque th/td a sa propre largeur FIXED. Si les largeurs ne matchent pas entre header row et data rows, les colonnes sont décalées."
+      fix: |
+        UTILISER UN SEUL colWidths map partagé entre header row (step 4) et data rows (step 5).
+        Vérifier: headerRow.children[i].width === dataRow.children[i].width pour chaque i.
+
+    - id: P13
+      issue: "Row-first: row height collapse"
+      cause: "Data row counterAxisSizingMode=AUTO peut causer des heights variables si les cellules ont des contenus de hauteurs différentes."
+      fix: |
+        Data row: counterAxisSizingMode = "FIXED", resize(width, 48).
+        OU: counterAxisSizingMode = "AUTO" avec chaque td height=48 FIXED.
+        Recommandé: FIXED 48px sur le row pour garantir l'uniformité.

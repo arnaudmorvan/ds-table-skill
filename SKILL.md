@@ -1,12 +1,12 @@
 ---
 name: ds-table
-description: "Génère des data tables Figma via MCP. USE WHEN: l'utilisateur veut créer un tableau/table dans Figma, un data table avec colonnes typées (texte, badges, checkboxes, actions), une page type user-list/orders-list, ou tout écran CRUD avec tableau. Architecture column-first, native slots v3."
+description: "Génère des data tables Figma via MCP. USE WHEN: l'utilisateur veut créer un tableau/table dans Figma, un data table avec colonnes typées (texte, badges, checkboxes, actions), une page type user-list/orders-list, ou tout écran CRUD avec tableau. Deux architectures: row-first (défaut) ou column-first."
 argument-hint: "Description de la table souhaitée (ex: 'table Orders 8 lignes avec checkbox, customer, status, actions')"
 ---
 
-# Skill — Figma Table Builder (v3 Native Slots)
+# Skill — Figma Table Builder (Native Slots)
 
-> Génère des tables de données complètes dans Figma via MCP, en utilisant une architecture **column-first** avec des composants natifs (th/td) et des **slots natifs Figma** (zero `detachInstance()`).
+> Génère des tables de données complètes dans Figma via MCP, en utilisant des composants natifs (th/td) et des **slots natifs Figma** (zero `detachInstance()`). Supporte deux architectures : **row-first** (défaut) et **column-first**.
 
 ## Quand utiliser ce skill
 
@@ -14,6 +14,20 @@ argument-hint: "Description de la table souhaitée (ex: 'table Orders 8 lignes a
 - L'utilisateur veut un **data table** avec colonnes typées (texte, badges, checkboxes, actions…)
 - L'utilisateur veut un **template de page table** (sidebar + topbar + table)
 - L'utilisateur demande une **user list**, **order list**, ou tout écran CRUD avec tableau
+
+## Routing — Choix de l'architecture
+
+| Demande utilisateur | Builder | Fichier |
+|--------------------|---------|---------|
+| "table", "tableau", "data table" (sans précision) | **Row-first** (défaut) | `table-row.yaml` |
+| "table en lignes", "row-based", "row layout" | **Row-first** | `table-row.yaml` |
+| "table en colonnes", "column-first", "column layout" | **Column-first** | `table-column.yaml` |
+
+**Par défaut → row-first** car :
+- Zebra striping trivial (fills sur le Row frame)
+- Sélection de ligne triviale (même principe)
+- Modèle mental naturel (comme HTML `<tr>`)
+- Élimine les pitfalls P9, P10, P11 du column-first
 
 ## Prérequis
 
@@ -32,24 +46,46 @@ Ce skill **consomme des composants** d'un Design System Figma existant. Les Comp
 
 ## Architecture
 
+### Row-first (défaut) — `table-row.yaml`
+
+```
+Table (VERTICAL, gap=0, cornerRadius=8, DROP_SHADOW)
+  ├── Header Row (HORIZONTAL, gap=0)
+  │   ├── th "Checkbox"   (FIXED 60px)
+  │   ├── th "Name"       (FIXED 230px)
+  │   ├── th "Status"     (FIXED 160px)
+  │   └── th "Actions"    (FIXED 120px)
+  ├── Data Row 1 (HORIZONTAL, gap=0, fills=transparent)
+  │   ├── td Slot          (checkbox)
+  │   ├── td Slot          (avatar+name)
+  │   ├── td Slot          (badge)
+  │   └── td Slot          (icons)
+  ├── Data Row 2 (HORIZONTAL, gap=0, fills=Subtle) ← zebra
+  │   └── ...
+  └── Data Row N
+```
+
+**Principe** : Chaque ligne est un frame HORIZONTAL contenant N td. Le zebra = fills sur le Row frame. Toutes les td utilisent `Fill=Default`.
+
+### Column-first (legacy) — `table-column.yaml`
+
 ```
 Table (HORIZONTAL, gap=0, cornerRadius=8, DROP_SHADOW)
   ├── Column "Checkbox"    (VERTICAL, width=60 FIXED)
-  │   ├── th instance      (FILL width, Size=MD, Fill=Light)
-  │   ├── td INSTANCE      (Content=Slot → checkbox dans slot natif)
+  │   ├── th instance      (FILL width)
+  │   ├── td INSTANCE      (Content=Slot → checkbox)
   │   └── ...
   ├── Column "Order"       (VERTICAL, width=170 FIXED)
   │   ├── th instance      (override "Column" text)
-  │   ├── td INSTANCE      (Content=Text, override "Value" text)
+  │   ├── td INSTANCE      (Content=Text)
   │   └── ...
-  ├── ... more columns ...
   └── Column "Actions"     (VERTICAL, width=230 FIXED)
       ├── th instance
-      ├── td INSTANCE      (Content=Slot → buttons/icons dans slot natif)
+      ├── td INSTANCE      (Content=Slot → icons)
       └── ...
 ```
 
-**Principe** : Column-first layout. Chaque colonne est un frame VERTICAL contenant 1 th (header) + N td (data cells). La table est un frame HORIZONTAL qui contient toutes les colonnes.
+**Principe** : Chaque colonne est un frame VERTICAL contenant 1 th + N td. Le zebra nécessite alternance Default/Subtle par cellule au build-time.
 
 ## Types de colonnes
 
@@ -84,7 +120,8 @@ Diviser en **2 appels MCP maximum** :
 knowledge-base/
   cspec/
     builders/
-      table.yaml          ← Spec principale (architecture, recipe, pitfalls)
+      table-row.yaml      ← Row-first builder (défaut, recommandé)
+      table-column.yaml   ← Column-first builder (legacy)
     components/
       th.yaml             ← Table Header Cell (variants, layout)
       td.yaml             ← Table Data Cell (variants, native slot, recipes)
@@ -92,8 +129,9 @@ knowledge-base/
 
 ### Lecture des specs
 
-1. **Toujours lire `builders/table.yaml`** en premier — contient l'architecture complète, les helpers réutilisables, et les pitfalls
-2. Lire `components/th.yaml` et `components/td.yaml` pour les détails de variantes et le pattern slot natif
+1. **Choisir le builder** selon le routing (row-first par défaut)
+2. Lire `builders/table-row.yaml` OU `builders/table-column.yaml` — contient l'architecture, les helpers, et les pitfalls
+3. Lire `components/th.yaml` et `components/td.yaml` pour les détails de variantes et le pattern slot natif
 
 ## Règles critiques
 

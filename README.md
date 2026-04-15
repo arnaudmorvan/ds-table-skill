@@ -128,7 +128,8 @@ ds-table/
   knowledge-base/
     cspec/
       builders/
-        table.yaml                      ← Main spec (architecture, recipes, pitfalls)
+        table-row.yaml                  ← Row-first builder (default, recommended)
+        table-column.yaml               ← Column-first builder (legacy)
       components/
         th.yaml                         ← Table Header Cell (variants, layout)
         td.yaml                         ← Table Data Cell (native slot pattern)
@@ -140,8 +141,12 @@ Ask your AI agent:
 
 > "Create a Team Members table in Figma with 10 rows, columns: checkbox, name, status, role, email, teams, actions."
 
+The skill picks the row-first layout by default. To use column-first, specify it:
+
+> "Create an Orders table in Figma using column-first layout."
+
 The skill will:
-1. Read the YAML specs to understand the architecture
+1. Read the appropriate YAML builder (row or column)
 2. Generate 2 MCP calls (structure + complex content)
 3. Build the table with zebra striping and sort indicators
 
